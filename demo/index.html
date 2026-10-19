@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch Recognizer</title>
+<meta name="description" content="Draw something and a convolutional neural network guesses what it is, live, right in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Sketchbook palette: paper, graphite, marker blue, highlighter yellow */
+:root{--paper:#F7F3EA;--sheet:#FFFDF7;--ink:#1F1F1F;--mut:#6B655B;--rule:#E4DECF;--blue:#2F5BEA;--hl:#FFD84D;
+  --hand:'Caveat',cursive;--sans:'Inter',system-ui,sans-serif;
+  --ease:cubic-bezier(.16,1,.3,1);--spring:cubic-bezier(.34,1.56,.64,1)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:hidden;
+  background:var(--paper) repeating-linear-gradient(transparent 0 31px,rgba(47,91,234,.07) 31px 32px)}
+.wrap{max-width:1100px;margin:0 auto;padding:48px 16px 64px}
+.label{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.pill{display:inline-flex;padding:5px 12px;border:1.5px solid var(--ink);border-radius:99px;background:var(--sheet);color:var(--ink)}
+
+/* ---------- header: the title writes itself, then the highlighter swipes ---------- */
+header{position:relative}
+h1{font-family:var(--hand);font-size:clamp(56px,9vw,104px);font-weight:700;line-height:.9;margin:18px 0 14px}
+h1 em{font-style:normal;color:var(--blue)}
+.w{display:inline-block;animation:write 1s cubic-bezier(.5,0,.3,1) both}
+.w2{animation-delay:.75s}
+.mark{background:linear-gradient(transparent 58%,var(--hl) 58%,var(--hl) 92%,transparent 92%) no-repeat;background-size:100% 100%;padding:0 .1em;animation:hl .55s ease-out 1.7s both}
+.lead{color:var(--mut);max-width:560px;font-size:17px;animation:fade .8s var(--ease) 1.1s both}
+.doodle{position:absolute;right:4%;top:40px;width:230px;pointer-events:none}
+.doodle path,.doodle circle{fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1s ease forwards}
+.doodle .d2{animation-delay:2.2s}.doodle .d3{animation-delay:2.6s;stroke:var(--blue)}.doodle .d4{animation-delay:2.9s}
+.doodle text{font-family:var(--hand);font-size:30px;font-weight:700;fill:var(--blue);opacity:0;animation:appear .5s ease 3.1s forwards}
+.doodle .star{transform-origin:186px 30px;animation:draw 1s ease 2.2s forwards,twinkle 3s ease-in-out 3.5s infinite}
+
+/* ---------- cards: sheets dropped on a desk ---------- */
+.stage{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:24px;margin-top:36px;align-items:start}
+.panel{background:var(--sheet);border:1.5px solid var(--ink);border-radius:18px;padding:18px;box-shadow:5px 5px 0 var(--ink);animation:drop .9s var(--spring) both}
+.stage .panel:first-child{--r:-2.5deg;animation-delay:.5s}
+.stage .panel:last-child{--r:2.5deg;animation-delay:.65s}
+
+/* ---------- drawing pad: graph paper, pencil cursor ---------- */
+.pad{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1.5px solid var(--rule);touch-action:none;
+  cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M5 27l2.5-7.5L22 5l5 5L12.5 24.5z' fill='%23FFD84D' stroke='%231F1F1F' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M19 8l5 5' stroke='%231F1F1F' stroke-width='1.6'/%3E%3Cpath d='M5 27l2.5-7.5 5 5z' fill='%23F7F3EA' stroke='%231F1F1F' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M4 28l2-4 2 2z' fill='%231F1F1F'/%3E%3C/svg%3E") 3 29,crosshair;
+  background-color:#FFFEFA;background-image:linear-gradient(rgba(47,91,234,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(47,91,234,.08) 1px,transparent 1px);background-size:24px 24px}
+.pad canvas{position:absolute;inset:0;width:100%;height:100%}
+.ghost{position:absolute;left:19%;top:8%;width:62%;height:62%;pointer-events:none;opacity:0;transition:opacity .5s}
+.ghost.on{opacity:1}
+.ghost path{fill:none;stroke:var(--blue);stroke-opacity:.32;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1}
+.ghost.on path{animation:draw 1.6s ease forwards}
+.hint{position:absolute;inset:0;display:grid;place-items:end center;padding-bottom:9%;text-align:center;color:var(--mut);pointer-events:none;transition:opacity .4s,transform .4s var(--ease)}
+.hint b{display:block;font-family:var(--hand);font-weight:700;color:var(--ink);font-size:34px;line-height:1.1;margin-bottom:2px}
+.hint.gone{opacity:0;transform:scale(.92)}
+.challenge{position:absolute;top:14px;left:12px;right:12px;display:flex;justify-content:center;pointer-events:none;z-index:2}
+.challenge[hidden]{display:none}
+.challenge span{position:relative;padding:8px 18px 6px;background:var(--hl);color:var(--ink);font-family:var(--hand);font-size:26px;font-weight:700;line-height:1.2;
+  transform:rotate(-1.5deg);box-shadow:2px 3px 0 rgba(31,31,31,.18);animation:slap .55s var(--spring)}
+.challenge span:before{content:"";position:absolute;top:-9px;left:50%;width:54px;height:16px;margin-left:-27px;background:rgba(255,255,255,.65);border:1px solid rgba(31,31,31,.08);transform:rotate(2deg)}
+.challenge span.win{background:#C9F2C7}
+.stamp{position:absolute;left:50%;top:50%;z-index:3;padding:6px 18px;border:4px double var(--blue);border-radius:10px;color:var(--blue);background:rgba(255,254,250,.7);
+  font-family:var(--hand);font-size:clamp(34px,5vw,52px);font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;pointer-events:none;
+  transform:translate(-50%,-50%) rotate(-12deg);opacity:0}
+.stamp.go{animation:stamp 2.4s var(--ease) forwards}
+
+.tools{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:99px;border:1.5px solid var(--ink);background:var(--sheet);
+  color:var(--ink);font:500 14px var(--sans);cursor:pointer;box-shadow:2px 2px 0 var(--ink);transition:transform .15s,box-shadow .15s,background .2s}
+.btn:hover{background:#FFF7DA;transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink)}
+.btn:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
+.btn.p{background:var(--blue);color:#fff}
+.btn.p:hover{background:#2550d6;animation:wiggle .5s ease}
+.btn:disabled{opacity:.35;cursor:default;transform:none;box-shadow:2px 2px 0 var(--ink);animation:none}
+.btn svg{width:16px;height:16px}
+.tools .sp{flex:1}
+.status{font-size:13px;color:var(--mut);margin-top:10px;min-height:1.5em}
+
+/* ---------- Doodle Bot: the mascot that reacts to the model ---------- */
+.ghead{display:flex;gap:14px;align-items:flex-start}
+.bot{width:76px;height:76px;flex:none;overflow:visible;transition:transform .3s var(--ease)}
+.bot .head{fill:var(--sheet);stroke:var(--ink);stroke-width:2.2}
+.bot .line{fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round}
+.bot .bulb{fill:var(--hl);stroke:var(--ink);stroke-width:2;transition:fill .3s}
+.bot .white{fill:#fff;stroke:var(--ink);stroke-width:2}
+.bot .pupil{fill:var(--ink);transition:transform .12s linear}
+.bot .lid{transform-box:fill-box;transform-origin:center;transition:transform .08s}
+.bot.blink .lid{transform:scaleY(.12)}
+.bot .m{opacity:0;transition:opacity .2s}
+.bot .cheek{fill:var(--hl);opacity:0;transition:opacity .3s}
+.bot .bubble{opacity:0;transform:scale(.4);transform-origin:56px 14px;transition:opacity .25s,transform .35s var(--spring)}
+.bot .bubble circle,.bot .bubble path{fill:var(--sheet);stroke:var(--ink);stroke-width:1.8}
+.bot .bubble text{font-family:var(--hand);font-size:17px;font-weight:700;fill:var(--blue);text-anchor:middle}
+.bot.idle .m-idle,.bot.think .m-think,.bot.happy .m-happy,.bot.wow .m-wow{opacity:1}
+.bot.think .bubble{opacity:1;transform:none}
+.bot.happy .cheek,.bot.wow .cheek{opacity:.9}
+.bot.wow .bulb{fill:var(--blue)}
+.bot.think .antenna{animation:wobble 1.2s ease-in-out infinite;transform-origin:32px 12px}
+.bot.jump{animation:jump .6s var(--spring)}
+
+.guess{flex:1;min-width:0;min-height:112px}
+.guess .label{display:block;margin-bottom:4px}
+.big{font-family:var(--hand);font-size:clamp(38px,4.6vw,54px);font-weight:700;line-height:1.05}
+.big.in{animation:write .5s cubic-bezier(.5,0,.3,1) both}
+.big .emo{display:inline-block;margin-right:8px;font-size:.8em;animation:boing .6s var(--spring)}
+.big small{display:block;font-family:var(--sans);font-size:15px;font-weight:400;color:var(--mut);margin-top:6px}
+
+.bars{display:grid;gap:10px;margin-top:16px}
+.bar{display:grid;grid-template-columns:110px 1fr 46px;align-items:center;gap:12px;font-size:14px}
+.bar span{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar:first-child span{color:var(--ink);font-weight:600}
+.bar i{height:10px;border-radius:10px;background:#EFE9DA;overflow:hidden;display:block}
+.bar i b{display:block;height:100%;border-radius:10px;background:rgba(31,31,31,.28);transform-origin:left;transition:transform .55s var(--spring)}
+.bar:first-child i b{background:var(--blue)}
+.bar em{font-style:normal;font-size:12px;font-weight:600;text-align:right;color:var(--mut);font-variant-numeric:tabular-nums}
+
+.sees{display:flex;gap:16px;align-items:center;margin-top:22px;padding-top:18px;border-top:1.5px dashed var(--rule)}
+.tile{position:relative;flex:none;transform:rotate(-2deg);transition:transform .4s var(--spring)}
+.tile:hover{transform:rotate(1deg) scale(1.08)}
+.tile canvas{display:block;width:84px;height:84px;image-rendering:pixelated;border-radius:6px;border:1.5px solid var(--ink);background:#000}
+.tile:after{content:"";position:absolute;left:2px;right:2px;top:2px;height:3px;border-radius:2px;background:var(--hl);opacity:0;box-shadow:0 0 8px var(--hl)}
+.tile.scan:after{animation:scan .6s ease-in-out}
+.sees p{font-size:13px;color:var(--mut)}
+.sees p b{color:var(--ink);font-weight:600}
+
+.cats{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.cats span{font-size:13px;padding:3px 10px;border-radius:99px;border:1.5px solid var(--rule);color:var(--mut);transition:border-color .3s,color .3s,background-color .3s;cursor:default}
+.cats span:hover{animation:wiggle .45s ease}
+.cats span.on{border-color:var(--ink);color:var(--ink);background:var(--hl);animation:boing .5s var(--spring)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:28px}
+.stats div{background:var(--sheet);border:1.5px solid var(--ink);border-radius:14px;padding:14px 16px;transition:transform .3s var(--spring),box-shadow .3s}
+.stats div:hover{transform:translate(-2px,-3px) rotate(-1deg);box-shadow:4px 5px 0 var(--ink)}
+.stats b{display:block;font-family:var(--hand);font-size:40px;font-weight:700;line-height:1}
+.stats div:first-child b{color:var(--blue)}
+.stats span{font-size:12px;color:var(--mut)}
+
+.how{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:56px}
+.how h3{font-family:var(--hand);font-size:32px;font-weight:700;line-height:1.1;margin:6px 0 6px}
+.how p{font-size:14px;color:var(--mut)}
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.reveal.on{opacity:1;transform:none}
+footer{margin-top:48px;font-size:12px;color:var(--mut)}
+footer a{color:var(--blue)}
+
+/* doodle confetti */
+.bit{position:fixed;left:0;top:0;width:22px;height:22px;pointer-events:none;z-index:50}
+.bit path,.bit circle{fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+@keyframes write{from{clip-path:inset(-10% 100% -10% 0)}to{clip-path:inset(-10% -2% -10% 0)}}
+@keyframes hl{from{background-size:0% 100%}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}}
+@keyframes appear{to{opacity:1}}
+@keyframes drop{from{opacity:0;transform:translateY(60px) rotate(var(--r,-2deg))}}
+@keyframes slap{0%{transform:translateY(-30px) rotate(-14deg) scale(1.15);opacity:0}100%{transform:rotate(-1.5deg)}}
+@keyframes stamp{0%{opacity:0;transform:translate(-50%,-50%) rotate(-12deg) scale(2.2)}14%{opacity:1;transform:translate(-50%,-50%) rotate(-12deg) scale(.94)}
+  22%{transform:translate(-50%,-50%) rotate(-12deg) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) rotate(-12deg) scale(1)}}
+@keyframes boing{0%{transform:scale(.4)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+@keyframes jump{0%,100%{transform:none}35%{transform:translateY(-14px) rotate(-6deg)}65%{transform:translateY(0) rotate(4deg) scale(1.04,.96)}}
+@keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-4deg)}75%{transform:rotate(4deg)}}
+@keyframes wobble{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(10deg)}}
+@keyframes twinkle{0%,100%{transform:rotate(0) scale(1)}50%{transform:rotate(18deg) scale(1.15)}}
+@keyframes scan{0%{top:2px;opacity:0}15%{opacity:1}85%{opacity:1}100%{top:79px;opacity:0}}
+
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}
+  .doodle path,.doodle circle{stroke-dashoffset:0}.doodle text{opacity:1}.reveal{opacity:1;transform:none}}
+@media (max-width:960px){.doodle{display:none}}
+@media (max-width:860px){.stage{grid-template-columns:1fr}.how{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:420px){.bar{grid-template-columns:86px 1fr 40px}.tools .btn{padding:8px 12px}.panel{box-shadow:4px 4px 0 var(--ink)}.bot{width:60px;height:60px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <span class="label pill">ML project · Sketch recognizer</span>
+    <h1><span class="w">Draw it.</span><br><em class="w w2">I'll <span class="mark">guess</span> it.</em></h1>
+    <p class="lead">A convolutional neural network trained on 180,000 doodles. It runs entirely in your browser and guesses while you draw.</p>
+    <svg class="doodle" viewBox="0 0 230 200" aria-hidden="true">
+      <path class="star" pathLength="1" d="M186 14l4.5 10 11 1-8.2 7.4 2.4 10.8-9.7-5.6-9.7 5.6 2.4-10.8-8.2-7.4 11-1z"/>
+      <path class="d2" pathLength="1" d="M40 40c18-14 34 6 20 16s-20-14 2-22"/>
+      <text x="58" y="112" transform="rotate(-6 58 112)">try me!</text>
+      <path class="d3" pathLength="1" d="M120 120c26 10 40 34 34 62"/>
+      <path class="d4" pathLength="1" d="M142 172l12 12 10-15"/>
+    </svg>
+  </header>
+
+  <section class="stage">
+    <div class="panel">
+      <div class="pad" id="pad">
+        <svg class="ghost" id="ghost" viewBox="0 0 100 100" aria-hidden="true"></svg>
+        <canvas id="draw" aria-label="Drawing area. Draw with your mouse, finger or pen." role="img"></canvas>
+        <div class="challenge" id="challenge" hidden><span id="chText"></span></div>
+        <div class="stamp" id="stamp" aria-hidden="true">Nailed it!</div>
+        <div class="hint" id="hint"><div><b>Draw something here</b>a cat, a bicycle, a house…</div></div>
+      </div>
+      <div class="tools">
+        <button class="btn" id="undo" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 3 2 6l3 3"/><path d="M2 6h7.5a4 4 0 0 1 0 8H7"/></svg>Undo</button>
+        <button class="btn" id="clear" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 4h10M6.5 4V2.5h3V4M4.5 4l.7 9.5h5.6l.7-9.5"/></svg>Clear</button>
+        <span class="sp"></span>
+        <button class="btn p" id="dare">Give me a challenge</button>
+      </div>
+      <p class="status" id="status">Waking up the neural network…</p>
+    </div>
+
+    <div class="panel" aria-live="polite">
+      <div class="ghead">
+        <svg class="bot idle" id="bot" viewBox="0 0 64 64" aria-hidden="true">
+          <g class="antenna"><path class="line" d="M32 12V5"/><circle class="bulb" cx="32" cy="4" r="3"/></g>
+          <rect class="head" x="6" y="12" width="52" height="42" rx="13"/>
+          <g transform="translate(22 30)"><g class="lid"><circle class="white" r="7.5"/><circle class="pupil" r="3.2"/></g></g>
+          <g transform="translate(42 30)"><g class="lid"><circle class="white" r="7.5"/><circle class="pupil" r="3.2"/></g></g>
+          <circle class="cheek" cx="13" cy="43" r="3.2"/><circle class="cheek" cx="51" cy="43" r="3.2"/>
+          <path class="m m-idle line" d="M26 44q6 3 12 0"/>
+          <path class="m m-think line" d="M25 45q3.5-3 7 0t7 0"/>
+          <path class="m m-happy line" d="M23 41q9 10 18 0"/>
+          <ellipse class="m m-wow line" cx="32" cy="45" rx="4" ry="5"/>
+          <g class="bubble"><circle cx="66" cy="10" r="2"/><circle cx="72" cy="2" r="9"/><text x="72" y="8">?</text></g>
+        </svg>
+        <div class="guess" id="guess"><span class="label">The model thinks</span><div class="big">…<small>Waiting for your drawing.</small></div></div>
+      </div>
+      <div class="bars" id="bars"></div>
+      <div class="sees">
+        <div class="tile" id="tile"><canvas id="seen" width="28" height="28" aria-label="The 28 by 28 pixel image the model receives"></canvas></div>
+        <p><b>What the model sees.</b> Your drawing is cropped, centred and shrunk to 28 × 28 pixels, exactly like the doodles it learned from.</p>
+      </div>
+      <div class="cats" id="cats" aria-label="Categories the model knows"></div>
+    </div>
+  </section>
+
+  <div class="stats reveal">
+    <div><b data-count>96.2%</b><span>accuracy on unseen doodles</span></div>
+    <div><b data-count>72.9%</b><span>simple baseline, for comparison</span></div>
+    <div><b data-count>180k</b><span>training drawings</span></div>
+    <div><b data-count>2.3 MB</b><span>runs in your browser</span></div>
+  </div>
+
+  <section class="how reveal">
+    <div><span class="label">01 · Data</span><h3>Real doodles</h3><p>15,000 drawings for each of 15 categories from Google's Quick, Draw!, made by real people in under 20 seconds each.</p></div>
+    <div><span class="label">02 · Model</span><h3>A small CNN</h3><p>Three convolution blocks learn strokes, then curves, then parts like ears and wheels. Trained in PyTorch on a GPU with random tilts, shifts and zooms.</p></div>
+    <div><span class="label">03 · In your browser</span><h3>No server</h3><p>The network is exported to ONNX and run by ONNX Runtime Web. Your drawing never leaves your device.</p></div>
+  </section>
+
+  <footer>Data: <a href="https://github.com/googlecreativelab/quickdraw-dataset" target="_blank" rel="noopener">Quick, Draw! dataset</a> by Google, CC BY 4.0. Built with PyTorch and ONNX Runtime Web.</footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script>
+const EMOJI={airplane:"✈️",apple:"🍎",banana:"🍌",bicycle:"🚲",car:"🚗",cat:"🐱",clock:"⏰",dog:"🐶",eye:"👁️",fish:"🐟",flower:"🌸",guitar:"🎸",house:"🏠",sun:"☀️",tree:"🌳"};
+const RM=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $=id=>document.getElementById(id);
+const pad=$("pad"),cv=$("draw"),ctx=cv.getContext("2d"),seen=$("seen"),sctx=seen.getContext("2d"),bot=$("bot");
+let labels=[],session=null,strokes=[],current=null,busy=false,queued=false,target=null,won=false;
+
+// ---------- drawing ----------
+function resize(){
+  const r=pad.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);
+  cv.width=r.width*dpr;cv.height=r.height*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);redraw();
+}
+function redraw(){
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);ctx.restore();
+  ctx.lineCap=ctx.lineJoin="round";ctx.lineWidth=Math.max(3.5,pad.clientWidth/90);ctx.strokeStyle="rgba(31,31,31,.92)"; // graphite pencil
+  const size=pad.clientWidth;
+  for(const s of strokes){ctx.beginPath();s.forEach(([x,y],i)=>i?ctx.lineTo(x*size,y*size):ctx.moveTo(x*size,y*size));
+    if(s.length===1)ctx.lineTo(s[0][0]*size+.1,s[0][1]*size);ctx.stroke()}
+}
+function pos(e){const r=pad.getBoundingClientRect();return[(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height]}
+pad.addEventListener("pointerdown",e=>{e.preventDefault();pad.setPointerCapture(e.pointerId);current=[pos(e)];strokes.push(current);redraw();schedule()});
+pad.addEventListener("pointermove",e=>{
+  if(!current)return;const p=pos(e),l=current[current.length-1];
+  if(Math.hypot(p[0]-l[0],p[1]-l[1])<.004)return;current.push(p);redraw();schedule();
+});
+const end=()=>{if(current){current=null;schedule()}};
+pad.addEventListener("pointerup",end);pad.addEventListener("pointercancel",end);
+$("undo").onclick=()=>{strokes.pop();redraw();schedule()};
+$("clear").onclick=()=>erase();
+
+// Clear = an eraser swipe instead of an instant blank
+function erase(then){
+  const done=()=>{strokes=[];redraw();cv.style.cssText="";schedule();then&&then()};
+  if(RM||!strokes.length)return done();
+  cv.animate([{transform:"none",opacity:1,filter:"blur(0)"},{transform:"translateX(40px) rotate(3deg)",opacity:0,filter:"blur(3px)"}],
+    {duration:320,easing:"cubic-bezier(.5,0,.75,0)"}).onfinish=done;
+  cv.style.opacity="0";
+}
+
+// ---------- make the drawing look like the training data ----------
+// Quick, Draw! doodles: longest side fills ~26 of 28 pixels, centred, soft thick strokes, white on black.
+const big=document.createElement("canvas");big.width=big.height=280;const bctx=big.getContext("2d");
+function toModelInput(){
+  const pts=strokes.flat();if(!pts.length)return null;
+  let x0=1,y0=1,x1=0,y1=0;for(const[x,y]of pts){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y)}
+  const side=Math.max(x1-x0,y1-y0,.04),scale=230/side;          // fit the longest side into 230 of 280 px
+  const ox=140-(x0+x1)/2*scale,oy=140-(y0+y1)/2*scale;           // centre it
+  bctx.fillStyle="#000";bctx.fillRect(0,0,280,280);
+  bctx.strokeStyle="#fff";bctx.lineWidth=22;bctx.lineCap=bctx.lineJoin="round";
+  for(const s of strokes){bctx.beginPath();s.forEach(([x,y],i)=>i?bctx.lineTo(x*scale+ox,y*scale+oy):bctx.moveTo(x*scale+ox,y*scale+oy));
+    if(s.length===1)bctx.lineTo(s[0][0]*scale+ox+.1,s[0][1]*scale+oy);bctx.stroke()}
+  sctx.imageSmoothingEnabled=true;sctx.imageSmoothingQuality="high";
+  sctx.clearRect(0,0,28,28);sctx.drawImage(big,0,0,28,28);       // shrink to 28x28 with smoothing
+  const px=sctx.getImageData(0,0,28,28).data,input=new Float32Array(784);
+  for(let i=0;i<784;i++)input[i]=px[i*4]/255;                    // 0 = empty, 1 = full stroke
+  return input;
+}
+
+// ---------- prediction (at most one model run at a time) ----------
+function schedule(){
+  $("undo").disabled=$("clear").disabled=!strokes.length;
+  $("hint").classList.toggle("gone",strokes.length>0);
+  ghostOn(!strokes.length);
+  if(!strokes.length){sctx.clearRect(0,0,28,28);showEmpty();return}
+  if(busy){queued=true;return}predict();
+}
+async function predict(){
+  if(!session)return;const input=toModelInput();if(!input)return;busy=true;
+  try{const out=await session.run({drawing:new ort.Tensor("float32",input,[1,1,28,28])});show(Array.from(out.probabilities.data))}
+  finally{busy=false;if(queued){queued=false;predict()}}
+}
+
+// ---------- Doodle Bot ----------
+function mood(m){if(!bot.classList.contains(m)){bot.classList.remove("idle","think","happy","wow");bot.classList.add(m)}}
+function jump(){if(RM)return;bot.classList.remove("jump");void bot.offsetWidth;bot.classList.add("jump")}
+const pupils=bot.querySelectorAll(".pupil");
+addEventListener("pointermove",e=>{ // the bot's eyes follow the pencil
+  const r=bot.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),d=Math.hypot(dx,dy)||1,k=Math.min(3.4,d/40);
+  pupils.forEach(p=>p.style.transform=`translate(${dx/d*k}px,${dy/d*k}px)`);
+},{passive:true});
+(function blink(){setTimeout(()=>{bot.classList.add("blink");setTimeout(()=>{bot.classList.remove("blink");blink()},130)},2200+Math.random()*3500)})();
+
+// ---------- display ----------
+function showEmpty(){
+  $("guess").innerHTML=`<span class="label">The model thinks</span><div class="big">…<small>Waiting for your drawing.</small></div>`;
+  renderBars(labels.map(()=>0));markCats(-1);mood("idle");lastTop=-1;lastPhrase="";
+}
+let lastTop=-1,lastPhrase="",celebrated=-1;
+function show(p){
+  const order=p.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]),[best,bi]=order[0],name=labels[bi];
+  const phrase=best>.85?`It's a ${name}!`:best>.55?`I think it's a ${name}`:best>.3?`Maybe a ${name}?`:"Hmm… not sure yet";
+  const sub=best>.3?`${Math.round(best*100)}% confident`:"Keep drawing, I'm still guessing.";
+  if(phrase!==lastPhrase){
+    $("guess").innerHTML=`<span class="label">The model thinks</span><div class="big in">${best>.3?`<span class="emo">${EMOJI[name]}</span>`:""}${phrase}<small>${sub}</small></div>`;
+    lastPhrase=phrase;
+  }else $("guess").querySelector("small").textContent=sub;
+  if(bi!==lastTop&&!RM){const t=$("tile");t.classList.remove("scan");void t.offsetWidth;t.classList.add("scan")}
+  lastTop=bi;
+  mood(best>.85?"wow":best>.55?"happy":"think");
+  if(best>.85&&celebrated!==bi){celebrated=bi;jump();burstFrom($("guess"),14)}
+  if(best<.5)celebrated=-1;
+  renderBars(p);markCats(best>.3?bi:-1);
+  if(target&&!won&&name===target&&best>.6){
+    won=true;$("chText").textContent=`${EMOJI[target]} Yes! That's a ${target}.`;$("chText").className="win";
+    const s=$("stamp");s.classList.remove("go");void s.offsetWidth;s.classList.add("go");
+    setTimeout(()=>burstFrom(pad,34,true),160);jump();
+  }
+}
+function renderBars(p){
+  const top=p.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,5),bars=$("bars"),any=p.some(x=>x>0);
+  if(bars.children.length!==5)bars.innerHTML=Array(5).fill('<div class="bar"><span></span><i><b style="transform:scaleX(0)"></b></i><em></em></div>').join("");
+  top.forEach(([v,i],k)=>{const r=bars.children[k];
+    r.querySelector("span").textContent=any?`${EMOJI[labels[i]]} ${labels[i]}`:"";
+    r.querySelector("b").style.transform=`scaleX(${v})`;
+    r.querySelector("em").textContent=any?`${Math.round(v*100)}%`:""});
+}
+function markCats(bi){[...$("cats").children].forEach((c,i)=>c.classList.toggle("on",i===bi))}
+
+// ---------- doodle confetti: little hand-drawn stars, squiggles, hearts and circles ----------
+const SHAPES=['<path d="M11 2l2.6 5.6 6.1.6-4.6 4.2 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4.2 6.1-.6z"/>','<path d="M2 14c3-6 5 6 8 0s5 6 8 0"/>',
+  '<path d="M11 19C3 13 2 8 5.5 5.5S11 7 11 8.5c0-1.5 2-5 5.5-3S19 13 11 19z"/>','<circle cx="11" cy="11" r="6"/>','<path d="M4 18L11 4l7 14z"/>','<path d="M11 3v16M3 11h16"/>'];
+const COLORS=["#2F5BEA","#FFD84D","#1F1F1F","#2F5BEA","#E8B800"];
+function burstFrom(el,n,big){
+  if(RM)return;const r=el.getBoundingClientRect(),ox=r.left+r.width*(big?.5:.28),oy=r.top+r.height*(big?.5:.45);
+  for(let i=0;i<n;i++){
+    const s=document.createElementNS("http://www.w3.org/2000/svg","svg");s.setAttribute("viewBox","0 0 22 22");s.setAttribute("class","bit");
+    s.innerHTML=SHAPES[i%SHAPES.length];s.querySelector("*").setAttribute("stroke",COLORS[(Math.random()*COLORS.length)|0]);document.body.appendChild(s);
+    const a=Math.random()*6.283,v=(big?160:90)+Math.random()*(big?220:120),dx=Math.cos(a)*v,dy=Math.sin(a)*v-(big?120:70),rot=(Math.random()-.5)*540,sc=.6+Math.random()*.8;
+    s.animate([{transform:`translate(${ox}px,${oy}px) scale(.2) rotate(0deg)`,opacity:1},
+               {transform:`translate(${ox+dx*.7}px,${oy+dy*.7}px) scale(${sc}) rotate(${rot*.6}deg)`,opacity:1,offset:.45},
+               {transform:`translate(${ox+dx}px,${oy+dy+140}px) scale(${sc*.8}) rotate(${rot}deg)`,opacity:0}],
+      {duration:1000+Math.random()*600,easing:"cubic-bezier(.2,.7,.4,1)"}).onfinish=()=>s.remove();
+  }
+}
+
+// ---------- ghost doodles: faint drawings sketch themselves while the paper is empty ----------
+const GHOSTS=[
+  "M25 50L25 82L75 82L75 50M20 53L50 24L80 53M44 82L44 66L56 66L56 82",                                           // house
+  "M50 36a14 14 0 1 1-.1 0M50 22v-9M50 78v9M22 50h-9M78 50h9M30 30l-6-6M70 70l6 6M70 30l6-6M30 70l-6 6",          // sun
+  "M14 50Q34 28 60 40Q70 45 74 50Q70 55 60 60Q34 72 14 50M74 50L90 37L90 63Z M30 47h.1",                         // fish
+  "M30 30L40 18L46 32H54L60 18L70 30Q78 44 70 60Q60 74 50 74Q40 74 30 60Q22 44 30 30M42 46h.1M58 46h.1M46 58Q50 62 54 58", // cat
+  "M50 80V48M50 48Q30 40 32 24Q46 18 50 36Q54 18 68 24Q70 40 50 48M50 66Q62 58 70 62"];                            // flower
+let ghostTimer=null,gi=0;
+function ghostOn(on){
+  const g=$("ghost");
+  if(!on||RM||!session){clearInterval(ghostTimer);ghostTimer=null;g.classList.remove("on");return}
+  if(ghostTimer)return;
+  const next=()=>{g.classList.remove("on");setTimeout(()=>{
+    if(!ghostTimer||strokes.length)return; // the user started drawing in the meantime: stay hidden
+    g.innerHTML=`<path pathLength="1" d="${GHOSTS[gi++%GHOSTS.length]}"/>`;void g.offsetWidth;g.classList.add("on")},500)};
+  next();ghostTimer=setInterval(next,3400);
+}
+
+// ---------- challenge ----------
+$("dare").onclick=()=>{
+  const options=labels.filter(l=>l!==target);target=options[Math.random()*options.length|0];won=false;
+  erase(()=>{$("challenge").hidden=false;const t=$("chText");t.className="";t.textContent=`Draw a ${target} ${EMOJI[target]}`;
+    t.style.animation="none";void t.offsetWidth;t.style.animation=""});
+};
+
+// ---------- scroll reveals and counting stats ----------
+function countUp(el){
+  const text=el.textContent,m=text.match(/[\d.]+/);if(!m||RM)return;
+  const end=parseFloat(m[0]),dec=(m[0].split(".")[1]||"").length,t0=performance.now();
+  (function tick(t){const k=Math.min(1,(t-t0)/1200),v=end*(1-Math.pow(1-k,3));
+    el.textContent=text.replace(m[0],v.toFixed(dec));if(k<1)requestAnimationFrame(tick)})(t0);
+}
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting)return;
+  e.target.classList.add("on");e.target.querySelectorAll("[data-count]").forEach(countUp);io.unobserve(e.target)}),{threshold:.3});
+document.querySelectorAll(".reveal").forEach(el=>io.observe(el));
+
+// ---------- sample drawings for shared links like ?demo=sun ----------
+const ring=(cx,cy,r)=>Array.from({length:41},(_,i)=>[cx+r*Math.cos(i/40*6.283),cy+r*Math.sin(i/40*6.283)]);
+const SAMPLES={
+  sun:()=>[ring(.5,.46,.14),...Array.from({length:8},(_,i)=>{const a=i*.785;return[[.5+.19*Math.cos(a),.46+.19*Math.sin(a)],[.5+.3*Math.cos(a),.46+.3*Math.sin(a)]]})],
+  house:()=>[[[.3,.45],[.3,.8],[.7,.8],[.7,.45],[.3,.45]],[[.25,.47],[.5,.22],[.75,.47]],[[.45,.8],[.45,.62],[.55,.62],[.55,.8]]],
+  bicycle:()=>[ring(.28,.62,.14),ring(.72,.62,.14),[[.28,.62],[.42,.4],[.62,.4],[.72,.62]],[[.42,.4],[.5,.62],[.28,.62]],[[.62,.4],[.6,.32],[.68,.3]],[[.4,.36],[.47,.36]]]};
+
+// ---------- start ----------
+(async()=>{
+  addEventListener("resize",resize);resize();
+  try{
+    labels=await (await fetch("labels.json")).json();
+    $("cats").innerHTML=labels.map(l=>`<span>${EMOJI[l]} ${l}</span>`).join("");
+    renderBars(labels.map(()=>0));
+    ort.env.wasm.wasmPaths="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+    ort.env.wasm.numThreads=1;
+    session=await ort.InferenceSession.create("model.onnx",{executionProviders:["wasm"]});
+    $("status").textContent="Ready! The neural network is running in your browser.";
+    const demo=SAMPLES[new URLSearchParams(location.search).get("demo")];
+    if(demo){strokes=demo();redraw()}
+    schedule();
+  }catch(err){
+    $("status").textContent="Couldn't load the model. Open this page through a web server (not as a file).";
+    console.error(err);
+  }
+})();
+</script>
+</body>
+</html>
