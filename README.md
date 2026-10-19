@@ -2,6 +2,8 @@
 
 **Draw something. A neural network guesses what it is, live, while you draw.**
 
+### ▶ [Try it live: sketch-recognizer.vercel.app](https://sketch-recognizer.vercel.app)
+
 My second machine learning project, and my first deep learning one. I trained a convolutional neural network (CNN) on 180,000 real doodles, then exported it so it runs entirely in the browser. There's no server: your drawing never leaves your device.
 
 ![The app recognising a sun drawing with 96% confidence](docs/app.png)
