@@ -32,14 +32,20 @@ class WithProbabilities(torch.nn.Module):
 
 
 net = SketchCNN(len(CATEGORIES))
-net.load_state_dict(torch.load("models/cnn.pt", map_location="cpu"))
+# the model retrained in step 7 to also say "I don't know" (falls back to the step 3 model)
+MODEL = "models/cnn_oe.pt" if Path("models/cnn_oe.pt").exists() else "models/cnn.pt"
+net.load_state_dict(torch.load(MODEL, map_location="cpu"))
 model = WithProbabilities(net).eval()   # eval(): turn off dropout, use learned BatchNorm stats
 
 example = torch.zeros(1, 1, 28, 28)     # one 28x28 grayscale drawing, values 0..1
 torch.onnx.export(model, (example,), OUT / "model.onnx", input_names=["drawing"],
                   output_names=["probabilities"], opset_version=17, dynamo=False)
 (OUT / "labels.json").write_text(json.dumps(CATEGORIES))
-print(f"Exported demo/model.onnx ({(OUT / 'model.onnx').stat().st_size / 1e6:.1f} MB) and demo/labels.json")
+# below this top confidence, the page answers "I don't know this one" (threshold chosen on validation in step 7)
+if Path("models/unknown_results.json").exists():
+    after = json.loads(Path("models/unknown_results.json").read_text())[-1]
+    (OUT / "unknown.json").write_text(json.dumps({"threshold": round(after["threshold"], 4)}))
+print(f"Exported {MODEL} to demo/model.onnx ({(OUT / 'model.onnx').stat().st_size / 1e6:.1f} MB) and demo/labels.json")
 
 # --- Check: does the ONNX file give the same answers as PyTorch? ----------------------
 _, _, (x_test, y_test) = load_split()

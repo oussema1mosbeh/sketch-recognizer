@@ -1,0 +1,52 @@
+[
+ {
+  "model": "BEFORE: current model + confidence threshold",
+  "threshold": 0.6564876437187195,
+  "accuracy (all test drawings)": 0.9620444444444445,
+  "known drawings kept": 0.9477333333333333,
+  "accuracy of kept answers": 0.9862127180641531,
+  "never-seen shapes answered 'I don't know'": 0.5988571428571429,
+  "separation AUROC (never-seen vs known)": 0.9253919936507936,
+  "per never-seen shape": {
+   "book": 0.552,
+   "cactus": 0.651,
+   "candle": 0.864,
+   "door": 0.495,
+   "envelope": 0.563,
+   "hat": 0.562,
+   "key": 0.505,
+   "light bulb": 0.635,
+   "lollipop": 0.301,
+   "mountain": 0.831,
+   "pizza": 0.574,
+   "scissors": 0.614,
+   "shoe": 0.744,
+   "snail": 0.493
+  }
+ },
+ {
+  "model": "AFTER: retrained with outlier exposure",
+  "threshold": 0.5129140615463257,
+  "accuracy (all test drawings)": 0.9614222222222222,
+  "known drawings kept": 0.9470222222222222,
+  "accuracy of kept answers": 0.9839496902571804,
+  "never-seen shapes answered 'I don't know'": 0.7785,
+  "separation AUROC (never-seen vs known)": 0.9563952888888889,
+  "per never-seen shape": {
+   "book": 0.943,
+   "cactus": 0.711,
+   "candle": 0.9,
+   "door": 0.966,
+   "envelope": 0.974,
+   "hat": 0.785,
+   "key": 0.563,
+   "light bulb": 0.887,
+   "lollipop": 0.409,
+   "mountain": 0.979,
+   "pizza": 0.756,
+   "scissors": 0.68,
+   "shoe": 0.816,
+   "snail": 0.53
+  }
+ }
+]

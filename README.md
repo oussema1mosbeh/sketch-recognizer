@@ -22,9 +22,10 @@ All numbers are on **22,500 test drawings the model never saw** during training 
 |---|---:|
 | Random guess | 6.7% |
 | Logistic regression (baseline) | 72.9% |
-| **CNN (this project)** | **96.2%** |
+| CNN | 96.2% |
+| **CNN that can also say "I don't know" (used in the app)** | **96.1%** |
 
-The right answer is in the CNN's top 3 guesses **98.9%** of the time.
+The right answer is in the CNN's top 3 guesses **98.9%** of the time. (The charts below are for the first CNN; the version in the app scores the same within 0.1 point.)
 
 ![Training curves: loss going down, validation accuracy rising to 96%](charts/training.png)
 
@@ -39,6 +40,22 @@ I looked at the model's most confident *mistakes*, and many of them aren't mista
 ![The model's most confident mistakes](charts/mistakes.png)
 
 A drawing labelled "airplane" is clearly an apple. One labelled "sun" is clearly a dog. One labelled "clock" is an apple. The original game sometimes saved drawings under the wrong word. This is called **label noise**: for a lot of its "errors", the model is right and the dataset is wrong. So the real accuracy is a bit higher than 96.2%. I wouldn't have found this by looking only at the numbers.
+
+## Saying "I don't know"
+
+A visitor drew a heart, and the first version answered **"It's an apple, 89% confident"**. The model only knows 15 things, and its last layer has to share 100% of its confidence between them, so *every* drawing gets one of the 15 names, often with high confidence. That's why a rule like "if the confidence is low, say I don't know" only half works.
+
+**The fix: outlier exposure.** I retrained the model with 67,500 extra drawings of 25 *other* things from Quick, Draw! (stars, clouds, smiley faces, circles, rainbows…), with the target "no idea": for those, its confidence should be spread evenly over the 15 categories. When the top confidence is below a threshold, the app now says *"Hmm… I don't know this one"* and shows the closest category in small text. To avoid calling a half-drawn cat "unknown", it only says so once you lift the pencil.
+
+**Measured honestly:** the threshold was chosen on validation data, then tested on **14 shapes never used anywhere in training** (key, pizza, light bulb, hat, scissors…):
+
+| | Before | After |
+|---|---:|---:|
+| Accuracy on the 15 categories | 96.2% | 96.1% |
+| Never-seen shapes answered "I don't know" | 60% | **78%** |
+| Separation between known and never-seen drawings (AUROC) | 92.5% | **95.6%** |
+
+The threshold keeps 95% of real drawings of the 15 categories (and those kept are 98.4% right). Easiest never-seen shapes to refuse: mountain (98%), envelope and door (97%). Hardest: lollipop (41%), which really does look like an apple or a flower. The heart from the demo, not in Quick, Draw! at all, now gets "I don't know".
 
 ## How it works
 
@@ -63,7 +80,7 @@ A drawing labelled "airplane" is clearly an apple. One labelled "sun" is clearly
 
 ## Limits
 
-- It only knows 15 things. Draw a giraffe and it will still pick one of the 15.
+- It only knows 15 things. It now says "I don't know" for most other drawings (78% of never-seen shapes in the test), but shapes that look like one of the 15, like a lollipop and an apple, can still fool it.
 - Cat vs dog is its weak spot.
 - Quick, Draw! drawings are fast and simple, so very detailed drawings can confuse it.
 
@@ -92,7 +109,9 @@ python -m venv .venv
 | `02_baseline.py` | Random and logistic regression baselines |
 | `03_train.py` | Trains the CNN (uses the GPU if there is one) |
 | `04_evaluate.py` | Test accuracy, confusion matrix, gallery of mistakes |
-| `05_export.py` | Exports to ONNX and checks it matches PyTorch |
+| `05_export.py` | Exports to ONNX and checks it matches PyTorch (uses the step 7 model when it exists, so run it again after step 7) |
+| `06_download_unknown.py` | Downloads drawings of 39 other things: 25 to teach "none of these", 14 kept only for testing (about 67 MB) |
+| `07_unknown.py` | Measures "I don't know" before, retrains with outlier exposure, measures after |
 
 ## Built with
 

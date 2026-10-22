@@ -101,7 +101,7 @@ h1 em{font-style:normal;color:var(--blue)}
 .big{font-family:var(--hand);font-size:clamp(38px,4.6vw,54px);font-weight:700;line-height:1.05}
 .big.in{animation:write .5s cubic-bezier(.5,0,.3,1) both}
 .big .emo{display:inline-block;margin-right:8px;font-size:.8em;animation:boing .6s var(--spring)}
-.big small{display:block;font-family:var(--sans);font-size:15px;font-weight:400;color:var(--mut);margin-top:6px}
+.big small{display:block;font-family:var(--sans);font-size:15px;font-weight:400;line-height:1.45;color:var(--mut);margin-top:6px}
 
 .bars{display:grid;gap:10px;margin-top:16px}
 .bar{display:grid;grid-template-columns:110px 1fr 46px;align-items:center;gap:12px;font-size:14px}
@@ -230,7 +230,7 @@ body{zoom:var(--z)}
   </section>
 
   <div class="stats reveal">
-    <div><b data-count>96.2%</b><span>accuracy on unseen doodles</span></div>
+    <div><b data-count>96.1%</b><span>accuracy on unseen doodles</span></div>
     <div><b data-count>72.9%</b><span>simple baseline, for comparison</span></div>
     <div><b data-count>180k</b><span>training drawings</span></div>
     <div><b data-count>2.3 MB</b><span>runs in your browser</span></div>
@@ -251,6 +251,7 @@ const EMOJI={airplane:"✈️",apple:"🍎",banana:"🍌",bicycle:"🚲",car:"�
 const RM=matchMedia("(prefers-reduced-motion: reduce)").matches;
 const $=id=>document.getElementById(id);
 const pad=$("pad"),cv=$("draw"),ctx=cv.getContext("2d"),seen=$("seen"),sctx=seen.getContext("2d"),bot=$("bot");
+let UNKNOWN=0;   // below this top confidence (chosen on validation data), the drawing is "none of the 15"
 let labels=[],session=null,strokes=[],current=null,busy=false,queued=false,target=null,won=false;
 
 // ---------- drawing ----------
@@ -337,18 +338,21 @@ function showEmpty(){
 let lastTop=-1,lastPhrase="",celebrated=-1;
 function show(p){
   const order=p.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]),[best,bi]=order[0],name=labels[bi];
-  const phrase=best>.85?`It's a ${name}!`:best>.55?`I think it's a ${name}`:best>.3?`Maybe a ${name}?`:"Hmm… not sure yet";
-  const sub=best>.3?`${Math.round(best*100)}% confident`:"Keep drawing, I'm still guessing.";
+  // "I don't know": only once the pencil is lifted, so a half-drawn cat isn't called unknown mid-stroke
+  const unknown=best<UNKNOWN&&!current&&strokes.length>0;
+  const phrase=unknown?"Hmm… I don't know this one":best>.85?`It's a ${name}!`:best>.55?`I think it's a ${name}`:best>.3?`Maybe a ${name}?`:"Hmm… not sure yet";
+  const sub=unknown?`I only know the 15 things below (unless you're not done yet). Closest: ${name}, ${Math.round(best*100)}%`
+    :best>.3?`${Math.round(best*100)}% confident`:"Keep drawing, I'm still guessing.";
   if(phrase!==lastPhrase){
-    $("guess").innerHTML=`<span class="label">The model thinks</span><div class="big in">${best>.3?`<span class="emo">${EMOJI[name]}</span>`:""}${phrase}<small>${sub}</small></div>`;
+    $("guess").innerHTML=`<span class="label">The model thinks</span><div class="big in${unknown?" unk":""}">${unknown?'<span class="emo">🤔</span>':best>.3?`<span class="emo">${EMOJI[name]}</span>`:""}${phrase}<small>${sub}</small></div>`;
     lastPhrase=phrase;
   }else $("guess").querySelector("small").textContent=sub;
   if(bi!==lastTop&&!RM){const t=$("tile");t.classList.remove("scan");void t.offsetWidth;t.classList.add("scan")}
   lastTop=bi;
-  mood(best>.85?"wow":best>.55?"happy":"think");
-  if(best>.85&&celebrated!==bi){celebrated=bi;jump();burstFrom($("guess"),14)}
+  mood(unknown?"think":best>.85?"wow":best>.55?"happy":"think");
+  if(!unknown&&best>.85&&celebrated!==bi){celebrated=bi;jump();burstFrom($("guess"),14)}
   if(best<.5)celebrated=-1;
-  renderBars(p);markCats(best>.3?bi:-1);
+  renderBars(p);markCats(!unknown&&best>.3?bi:-1);
   if(target&&!won&&name===target&&best>.6){
     won=true;$("chText").textContent=`${EMOJI[target]} Yes! That's a ${target}.`;$("chText").className="win";
     const s=$("stamp");s.classList.remove("go");void s.offsetWidth;s.classList.add("go");
@@ -430,6 +434,7 @@ const SAMPLES={
   addEventListener("resize",resize);resize();
   try{
     labels=await (await fetch("labels.json")).json();
+    try{UNKNOWN=(await (await fetch("unknown.json")).json()).threshold}catch{}
     $("cats").innerHTML=labels.map(l=>`<span>${EMOJI[l]} ${l}</span>`).join("");
     renderBars(labels.map(()=>0));
     ort.env.wasm.wasmPaths="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
