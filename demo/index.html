@@ -56,7 +56,7 @@ h1 em{font-style:normal;color:var(--blue)}
 .challenge span{position:relative;padding:8px 18px 6px;background:var(--hl);color:var(--ink);font-family:var(--hand);font-size:26px;font-weight:700;line-height:1.2;
   transform:rotate(-1.5deg);box-shadow:2px 3px 0 rgba(31,31,31,.18);animation:slap .55s var(--spring)}
 .challenge span:before{content:"";position:absolute;top:-9px;left:50%;width:54px;height:16px;margin-left:-27px;background:rgba(255,255,255,.65);border:1px solid rgba(31,31,31,.08);transform:rotate(2deg)}
-.challenge span.win{background:#C9F2C7}
+.challenge span.win{background:#C9F2C7}.close{background:#FFF3B0}
 .stamp{position:absolute;left:50%;top:50%;z-index:3;padding:6px 18px;border:4px double var(--blue);border-radius:10px;color:var(--blue);background:rgba(255,254,250,.7);
   font-family:var(--hand);font-size:clamp(34px,5vw,52px);font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;pointer-events:none;
   transform:translate(-50%,-50%) rotate(-12deg);opacity:0}
@@ -268,7 +268,7 @@ function redraw(){
     if(s.length===1)ctx.lineTo(s[0][0]*size+.1,s[0][1]*size);ctx.stroke()}
 }
 function pos(e){const r=pad.getBoundingClientRect();return[(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height]}
-pad.addEventListener("pointerdown",e=>{e.preventDefault();pad.setPointerCapture(e.pointerId);current=[pos(e)];strokes.push(current);redraw();schedule()});
+pad.addEventListener("pointerdown",e=>{e.preventDefault();clearTimeout(winTimer);pad.setPointerCapture(e.pointerId);current=[pos(e)];strokes.push(current);redraw();schedule()});
 pad.addEventListener("pointermove",e=>{
   if(!current)return;const p=pos(e),l=current[current.length-1];
   if(Math.hypot(p[0]-l[0],p[1]-l[1])<.004)return;current.push(p);redraw();schedule();
@@ -332,6 +332,7 @@ addEventListener("pointermove",e=>{ // the bot's eyes follow the pencil
 
 // ---------- display ----------
 function showEmpty(){
+  clearTimeout(winTimer);if(target&&!won){const t=$("chText");t.className="";t.textContent=`Draw a ${target} ${EMOJI[target]}`}
   $("guess").innerHTML=`<span class="label">The model thinks</span><div class="big">…<small>Waiting for your drawing.</small></div>`;
   renderBars(labels.map(()=>0));markCats(-1);mood("idle");lastTop=-1;lastPhrase="";
 }
@@ -350,14 +351,27 @@ function show(p){
   if(bi!==lastTop&&!RM){const t=$("tile");t.classList.remove("scan");void t.offsetWidth;t.classList.add("scan")}
   lastTop=bi;
   mood(unknown?"think":best>.85?"wow":best>.55?"happy":"think");
-  if(!unknown&&best>.85&&celebrated!==bi){celebrated=bi;jump();burstFrom($("guess"),14)}
+  if(!target&&!unknown&&best>.85&&celebrated!==bi){celebrated=bi;jump();burstFrom($("guess"),14)}  // in a challenge, only the win celebrates
   if(best<.5)celebrated=-1;
   renderBars(p);markCats(!unknown&&best>.3?bi:-1);
-  if(target&&!won&&name===target&&best>.6){
-    won=true;$("chText").textContent=`${EMOJI[target]} Yes! That's a ${target}.`;$("chText").className="win";
-    const s=$("stamp");s.classList.remove("go");void s.offsetWidth;s.classList.add("go");
-    setTimeout(()=>burstFrom(pad,34,true),160);jump();
-  }
+  if(target&&!won)challengeCheck(name===target&&best>.6&&!unknown);
+}
+
+// The challenge is won only once the drawing is finished: the pencil is up and the model still
+// sees the target after a short pause. Recognising it mid-stroke only encourages.
+let winTimer=null;
+const WIN_PAUSE=1000;
+function challengeCheck(hit){
+  clearTimeout(winTimer);
+  const t=$("chText");
+  if(!hit){t.className="";t.textContent=`Draw a ${target} ${EMOJI[target]}`;return}
+  t.className="close";t.textContent=`${EMOJI[target]} I can already see a ${target}! Keep going, or lift your pencil when you're done.`;
+  if(!current)winTimer=setTimeout(()=>{if(!current&&!won)winChallenge()},WIN_PAUSE);
+}
+function winChallenge(){
+  won=true;$("chText").textContent=`${EMOJI[target]} Yes! That's a ${target}.`;$("chText").className="win";
+  const s=$("stamp");s.classList.remove("go");void s.offsetWidth;s.classList.add("go");
+  setTimeout(()=>burstFrom(pad,34,true),160);jump();
 }
 function renderBars(p){
   const top=p.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,5),bars=$("bars"),any=p.some(x=>x>0);
